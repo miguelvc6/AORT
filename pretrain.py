@@ -131,11 +131,11 @@ def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size:
         **kwargs
     ), split=split)
 
-    dataloader_kwargs = dict(
-        dataset,
-        batch_size=None,
-        pin_memory=True,
-    )
+    dataloader_kwargs = {
+        "dataset": dataset,
+        "batch_size": None,
+        "pin_memory": True,
+    }
     dataloader_kwargs["num_workers"] = config.dataloader_num_workers
     if config.dataloader_num_workers > 0:
         dataloader_kwargs["prefetch_factor"] = config.dataloader_prefetch_factor or 8
