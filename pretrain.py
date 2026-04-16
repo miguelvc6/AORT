@@ -84,6 +84,11 @@ class PretrainConfig(pydantic.BaseModel):
     ema_rate: float = 0.999 # EMA-rate
     freeze_weights: bool = False # If True, freeze weights and only learn the embeddings
 
+    # Dataloader
+    dataloader_num_workers: int = 0
+    dataloader_prefetch_factor: Optional[int] = None
+    dataloader_persistent_workers: bool = False
+
 @dataclass
 class TrainState:
     model: nn.Module
@@ -125,14 +130,18 @@ def create_dataloader(config: PretrainConfig, split: str, rank: int, world_size:
         num_replicas=world_size,
         **kwargs
     ), split=split)
-    dataloader = DataLoader(
+
+    dataloader_kwargs = dict(
         dataset,
         batch_size=None,
-        num_workers=1,
-        prefetch_factor=8,
         pin_memory=True,
-        persistent_workers=True
     )
+    dataloader_kwargs["num_workers"] = config.dataloader_num_workers
+    if config.dataloader_num_workers > 0:
+        dataloader_kwargs["prefetch_factor"] = config.dataloader_prefetch_factor or 8
+        dataloader_kwargs["persistent_workers"] = config.dataloader_persistent_workers
+
+    dataloader = DataLoader(**dataloader_kwargs)
     return dataloader, dataset.metadata
 
 
