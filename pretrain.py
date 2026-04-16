@@ -96,10 +96,11 @@ class TrainState:
 
 
 def create_dense_optimizer(params, config: PretrainConfig):
+    bootstrap_lr = max(float(config.lr), 1e-12)
     if AdamATan2 is not None:
         return AdamATan2(
             params,
-            lr=0,
+            lr=bootstrap_lr,
             weight_decay=config.weight_decay,
             betas=(config.beta1, config.beta2),
         )
@@ -110,7 +111,7 @@ def create_dense_optimizer(params, config: PretrainConfig):
     )
     return torch.optim.AdamW(
         params,
-        lr=0,
+        lr=bootstrap_lr,
         weight_decay=config.weight_decay,
         betas=(config.beta1, config.beta2),
     )
