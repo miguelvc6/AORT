@@ -96,8 +96,35 @@ class ACTLossHead(nn.Module):
             q_continue_loss = F.binary_cross_entropy_with_logits(outputs["q_continue_logits"], outputs["target_q_continue"], reduction="sum")
 
             metrics["q_continue_loss"] = q_continue_loss.detach()
+
+        router_regularization_loss = 0
+        if "router_probs" in outputs:
+            router_probs = outputs["router_probs"].to(torch.float32)
+            router_entropy = outputs.get(
+                "router_entropy",
+                -(router_probs * torch.log(router_probs.clamp_min(1e-8))).sum(dim=-1),
+            ).to(torch.float32)
+
+            entropy_loss = -router_entropy.sum()
+            metrics["router_entropy_loss"] = (
+                self.model.config.router_entropy_weight * entropy_loss.detach()  # type: ignore[attr-defined]
+            )
+            router_regularization_loss = router_regularization_loss + (
+                self.model.config.router_entropy_weight * entropy_loss  # type: ignore[attr-defined]
+            )
+
+            if getattr(self.model.config, "router_balance_weight", 0.0) > 0:  # type: ignore[attr-defined]
+                mean_router_probs = router_probs.mean(dim=0)
+                target_probs = torch.full_like(mean_router_probs, 1.0 / mean_router_probs.numel())
+                balance_loss = router_probs.shape[0] * ((mean_router_probs - target_probs) ** 2).sum()
+                metrics["router_balance_loss"] = (
+                    self.model.config.router_balance_weight * balance_loss.detach()  # type: ignore[attr-defined]
+                )
+                router_regularization_loss = router_regularization_loss + (
+                    self.model.config.router_balance_weight * balance_loss  # type: ignore[attr-defined]
+                )
         # Filter outputs for return
         detached_outputs = {k: outputs[k].detach() for k in return_keys if k in outputs}
 
-        return new_carry, lm_loss + 0.5 * (q_halt_loss + q_continue_loss), metrics, detached_outputs, new_carry.halted.all()
-
+        total_loss = lm_loss + 0.5 * (q_halt_loss + q_continue_loss) + router_regularization_loss
+        return new_carry, total_loss, metrics, detached_outputs, new_carry.halted.all()

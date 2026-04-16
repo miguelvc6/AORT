@@ -1,10 +1,11 @@
-from typing import Optional, Any, Sequence, List
+from typing import Optional, Any, Sequence, List, Dict
 from dataclasses import dataclass
 import os
 import math
 import yaml
 import shutil
 import copy
+import json
 
 import torch
 import torch.distributed as dist
@@ -286,6 +287,128 @@ def create_evaluators(config: PretrainConfig, eval_metadata: PuzzleDatasetMetada
 
     return evaluators
 
+
+def routing_enabled(config: PretrainConfig) -> bool:
+    arch_extra = config.arch.__pydantic_extra__ or {}  # type: ignore[union-attr]
+    return bool(arch_extra.get("operator_routing", False))
+
+
+def routing_num_loops(config: PretrainConfig) -> int:
+    arch_extra = config.arch.__pydantic_extra__ or {}  # type: ignore[union-attr]
+    return int(arch_extra.get("halt_max_steps", 0))
+
+
+def init_routing_stats(set_names: Sequence[str], num_loops: int):
+    return {
+        set_name: {
+            "count": torch.zeros(num_loops, dtype=torch.float64, device="cuda"),
+            "entropy_sum": torch.zeros(num_loops, dtype=torch.float64, device="cuda"),
+            "prob_sum": torch.zeros(num_loops, 2, dtype=torch.float64, device="cuda"),
+            "usage_count": torch.zeros(num_loops, 2, dtype=torch.float64, device="cuda"),
+        }
+        for set_name in set_names
+    }
+
+
+def update_routing_stats(
+    routing_stats: dict,
+    set_name: str,
+    batch: Dict[str, torch.Tensor],
+    preds: Dict[str, torch.Tensor],
+    blank_identifier_id: int,
+):
+    required_keys = {"router_probs", "router_entropy", "router_loop_idx"}
+    if not required_keys.issubset(preds):
+        return
+
+    valid_mask = batch["puzzle_identifiers"] != blank_identifier_id
+    if not torch.any(valid_mask):
+        return
+
+    loop_idx = preds["router_loop_idx"][valid_mask].to(torch.long)
+    probs = preds["router_probs"][valid_mask].to(torch.float64)
+    entropy = preds["router_entropy"][valid_mask].to(torch.float64)
+
+    usage = torch.zeros_like(probs)
+    usage.scatter_(1, torch.argmax(probs, dim=-1, keepdim=True), 1.0)
+
+    stats = routing_stats[set_name]
+    ones = torch.ones_like(entropy)
+    stats["count"].index_add_(0, loop_idx, ones)
+    stats["entropy_sum"].index_add_(0, loop_idx, entropy)
+    stats["prob_sum"].index_add_(0, loop_idx, probs)
+    stats["usage_count"].index_add_(0, loop_idx, usage)
+
+
+def finalize_routing_stats(
+    config: PretrainConfig,
+    train_state: TrainState,
+    routing_stats: dict,
+    rank: int,
+    world_size: int,
+):
+    for stats in routing_stats.values():
+        for tensor in stats.values():
+            if world_size > 1:
+                dist.reduce(tensor, dst=0)
+
+    if rank != 0:
+        return None, None
+
+    metrics_by_set = {}
+    artifact = {"step": train_state.step, "sets": {}}
+    for set_name, stats in routing_stats.items():
+        counts = stats["count"].cpu().numpy()
+        entropy_sum = stats["entropy_sum"].cpu().numpy()
+        prob_sum = stats["prob_sum"].cpu().numpy()
+        usage_count = stats["usage_count"].cpu().numpy()
+
+        total_count = float(counts.sum())
+        denom = max(total_count, 1.0)
+        metrics = {
+            "router_entropy": float(entropy_sum.sum() / denom),
+            "router_p_mlp": float(prob_sum[:, 0].sum() / denom),
+            "router_p_attn": float(prob_sum[:, 1].sum() / denom),
+        }
+
+        loops = []
+        for loop_idx, count in enumerate(counts.tolist()):
+            if count <= 0:
+                continue
+
+            loop_metrics = {
+                "loop_idx": loop_idx,
+                "count": float(count),
+                "p_mlp_mean": float(prob_sum[loop_idx, 0] / count),
+                "p_attn_mean": float(prob_sum[loop_idx, 1] / count),
+                "entropy_mean": float(entropy_sum[loop_idx] / count),
+                "usage_mlp": float(usage_count[loop_idx, 0] / count),
+                "usage_attn": float(usage_count[loop_idx, 1] / count),
+            }
+            loops.append(loop_metrics)
+            metrics[f"router_loop_{loop_idx}_p_mlp"] = loop_metrics["p_mlp_mean"]
+            metrics[f"router_loop_{loop_idx}_p_attn"] = loop_metrics["p_attn_mean"]
+            metrics[f"router_loop_{loop_idx}_entropy"] = loop_metrics["entropy_mean"]
+            metrics[f"router_loop_{loop_idx}_usage_mlp"] = loop_metrics["usage_mlp"]
+            metrics[f"router_loop_{loop_idx}_usage_attn"] = loop_metrics["usage_attn"]
+
+        metrics_by_set[set_name] = metrics
+        artifact["sets"][set_name] = {
+            "summary": {
+                "router_entropy": metrics["router_entropy"],
+                "router_p_mlp": metrics["router_p_mlp"],
+                "router_p_attn": metrics["router_p_attn"],
+            },
+            "loops": loops,
+        }
+
+    if config.checkpoint_path is not None:
+        os.makedirs(config.checkpoint_path, exist_ok=True)
+        with open(os.path.join(config.checkpoint_path, f"routing_stats_step_{train_state.step}.json"), "w") as f:
+            json.dump(artifact, f, indent=2)
+
+    return metrics_by_set, artifact
+
 def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
     train_state.step += 1
     if train_state.step > train_state.total_steps:  # At most train_total_steps
@@ -356,6 +479,9 @@ def evaluate(
 
     with torch.inference_mode():
         return_keys = set(config.eval_save_outputs)
+        use_routing_stats = routing_enabled(config)
+        if use_routing_stats:
+            return_keys.update({"router_logits", "router_probs", "router_entropy", "router_loop_idx"})
         for evaluator in evaluators:
             evaluator.begin_eval()
             return_keys.update(evaluator.required_outputs)
@@ -367,6 +493,7 @@ def evaluate(
 
         metric_keys = []
         metric_values = None
+        routing_stats = init_routing_stats(eval_metadata.sets, routing_num_loops(config)) if use_routing_stats else None
 
         carry = None
         processed_batches = 0
@@ -388,6 +515,15 @@ def evaluate(
                     carry=carry, batch=batch, return_keys=return_keys
                 )
                 inference_steps += 1
+
+                if routing_stats is not None:
+                    update_routing_stats(
+                        routing_stats,
+                        set_name,
+                        batch,
+                        preds,
+                        eval_metadata.blank_identifier_id,
+                    )
 
                 if all_finish:
                     break
@@ -482,6 +618,21 @@ def evaluate(
                 
         if rank == 0:
             print("All evaluators completed!")
+
+        if routing_stats is not None:
+            routing_metrics, _ = finalize_routing_stats(
+                config=config,
+                train_state=train_state,
+                routing_stats=routing_stats,
+                rank=rank,
+                world_size=world_size,
+            )
+            if rank == 0 and routing_metrics is not None:
+                if reduced_metrics is None:
+                    reduced_metrics = {}
+                for set_name, metrics in routing_metrics.items():
+                    reduced_metrics.setdefault(set_name, {})
+                    reduced_metrics[set_name].update(metrics)
 
     return reduced_metrics
 
