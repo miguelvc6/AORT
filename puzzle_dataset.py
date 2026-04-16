@@ -205,36 +205,38 @@ class PuzzleDataset(IterableDataset):
 
             # Randomly shuffle groups
             rng = np.random.Generator(np.random.Philox(seed=self.config.seed + self._iters))
+            num_groups = dataset["group_indices"].size - 1
 
-            group_order = np.concatenate([rng.permutation(dataset["group_indices"].size - 1) for _i in range(self.config.epochs_per_iter)])
-            start_index = 0
-            
-            while start_index < group_order.size:
-                start_index, batch_indices, batch_puzzle_indices = _sample_batch(
-                    rng,
-                    group_order=group_order,
-                    puzzle_indices=dataset["puzzle_indices"],
-                    group_indices=dataset["group_indices"],
-                    start_index=start_index,
-                    global_batch_size=self.config.global_batch_size,
-                )
+            for _epoch in range(self.config.epochs_per_iter):
+                group_order = rng.permutation(num_groups)
+                start_index = 0
 
-                # Select current rank and collate
-                global_effective_batch_size = batch_puzzle_indices.size  # Global effective batch size, excluding pads
+                while start_index < group_order.size:
+                    start_index, batch_indices, batch_puzzle_indices = _sample_batch(
+                        rng,
+                        group_order=group_order,
+                        puzzle_indices=dataset["puzzle_indices"],
+                        group_indices=dataset["group_indices"],
+                        start_index=start_index,
+                        global_batch_size=self.config.global_batch_size,
+                    )
 
-                # Drop last batch
-                if global_effective_batch_size < self.config.global_batch_size:
-                    break
+                    # Select current rank and collate
+                    global_effective_batch_size = batch_puzzle_indices.size  # Global effective batch size, excluding pads
 
-                batch_indices        = batch_indices       [self.config.rank * self.local_batch_size: (self.config.rank + 1) * self.local_batch_size]
-                batch_puzzle_indices = batch_puzzle_indices[self.config.rank * self.local_batch_size: (self.config.rank + 1) * self.local_batch_size]
-                batch = self._collate_batch({
-                    "inputs": dataset["inputs"][batch_indices],
-                    "labels": dataset["labels"][batch_indices],
-                    "puzzle_identifiers": dataset["puzzle_identifiers"][batch_puzzle_indices]
-                })
+                    # Drop last batch
+                    if global_effective_batch_size < self.config.global_batch_size:
+                        break
 
-                yield set_name, batch, global_effective_batch_size
+                    batch_indices        = batch_indices       [self.config.rank * self.local_batch_size: (self.config.rank + 1) * self.local_batch_size]
+                    batch_puzzle_indices = batch_puzzle_indices[self.config.rank * self.local_batch_size: (self.config.rank + 1) * self.local_batch_size]
+                    batch = self._collate_batch({
+                        "inputs": dataset["inputs"][batch_indices],
+                        "labels": dataset["labels"][batch_indices],
+                        "puzzle_identifiers": dataset["puzzle_identifiers"][batch_puzzle_indices]
+                    })
+
+                    yield set_name, batch, global_effective_batch_size
                 
     def __iter__(self):
         worker_info = get_worker_info()
