@@ -6,6 +6,7 @@ import yaml
 import shutil
 import copy
 import json
+import gc
 
 import torch
 import torch.distributed as dist
@@ -89,6 +90,11 @@ class PretrainConfig(pydantic.BaseModel):
     dataloader_prefetch_factor: Optional[int] = None
     dataloader_persistent_workers: bool = False
 
+    # Memory diagnostics / cleanup
+    log_memory_usage: bool = True
+    eval_memory_log_interval: int = 25
+    eval_memory_cleanup_interval: int = 1
+
 @dataclass
 class TrainState:
     model: nn.Module
@@ -98,6 +104,64 @@ class TrainState:
 
     step: int
     total_steps: int
+
+
+def _read_proc_status_value_kb(field_name: str) -> Optional[int]:
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith(field_name):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return int(parts[1])
+    except OSError:
+        return None
+    return None
+
+
+def _format_num_bytes(num_bytes: Optional[float]) -> str:
+    if num_bytes is None:
+        return "n/a"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(num_bytes)
+    unit_idx = 0
+    while value >= 1024.0 and unit_idx < len(units) - 1:
+        value /= 1024.0
+        unit_idx += 1
+    return f"{value:.2f} {units[unit_idx]}"
+
+
+def log_memory_usage(config: PretrainConfig, label: str, rank: int):
+    if not config.log_memory_usage or rank != 0:
+        return
+
+    rss_kb = _read_proc_status_value_kb("VmRSS:")
+    hwm_kb = _read_proc_status_value_kb("VmHWM:")
+    message = (
+        f"[Memory] {label} | "
+        f"RSS={_format_num_bytes(None if rss_kb is None else rss_kb * 1024)} | "
+        f"PeakRSS={_format_num_bytes(None if hwm_kb is None else hwm_kb * 1024)}"
+    )
+
+    if torch.cuda.is_available():
+        device = torch.cuda.current_device()
+        allocated = torch.cuda.memory_allocated(device)
+        reserved = torch.cuda.memory_reserved(device)
+        max_allocated = torch.cuda.max_memory_allocated(device)
+        message += (
+            f" | CUDA allocated={_format_num_bytes(allocated)}"
+            f" reserved={_format_num_bytes(reserved)}"
+            f" peak_allocated={_format_num_bytes(max_allocated)}"
+        )
+
+    print(message, flush=True)
+
+
+def cleanup_memory(config: PretrainConfig, label: str, rank: int):
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    log_memory_usage(config, label, rank)
 
 
 def create_dense_optimizer(params, config: PretrainConfig):
@@ -112,7 +176,6 @@ def create_dense_optimizer(params, config: PretrainConfig):
 
     print(
         "Warning: `adam_atan2` backend is unavailable; falling back to `torch.optim.AdamW`."
-        f" Original import error: {ADAM_ATAN2_IMPORT_ERROR}"
     )
     return torch.optim.AdamW(
         params,
@@ -499,6 +562,7 @@ def evaluate(
     reduced_metrics = None
 
     with torch.inference_mode():
+        log_memory_usage(config, "evaluation:start", rank)
         return_keys = set(config.eval_save_outputs)
         use_routing_stats = routing_enabled(config)
         if use_routing_stats:
@@ -522,7 +586,12 @@ def evaluate(
         for set_name, batch, global_batch_size in eval_loader:
             processed_batches += 1
             if rank == 0:
-                print(f"Processing batch {processed_batches}: {set_name}")
+                print(f"Processing batch {processed_batches}: {set_name}", flush=True)
+                if processed_batches == 1 or (
+                    config.eval_memory_log_interval > 0
+                    and processed_batches % config.eval_memory_log_interval == 0
+                ):
+                    log_memory_usage(config, f"evaluation:before_batch_{processed_batches}", rank)
             
             # To device
             batch = {k: v.cuda() for k, v in batch.items()}
@@ -550,7 +619,7 @@ def evaluate(
                     break
 
             if rank == 0:
-                print(f"  Completed inference in {inference_steps} steps")
+                print(f"  Completed inference in {inference_steps} steps", flush=True)
 
             for collection in (batch, preds):
                 for k, v in collection.items():
@@ -578,11 +647,21 @@ def evaluate(
 
             del metrics
 
+            if config.eval_memory_cleanup_interval > 0 and (
+                processed_batches % config.eval_memory_cleanup_interval == 0
+            ):
+                cleanup_memory(config, f"evaluation:after_batch_{processed_batches}", rank)
+
+        print("Completed all batches for evaluation", flush=True)
+        cleanup_memory(config, "evaluation:after_all_batches", rank)
         # concatenate save preds
+        print("Concatenating predictions for saving...", flush=True)
         save_preds = {k: torch.cat(v, dim=0) for k, v in save_preds.items()}
+        cleanup_memory(config, "evaluation:after_concat_preds", rank)
 
         # Save preds
         if config.checkpoint_path is not None and len(save_preds):
+            print(f"Saving predictions for this evaluation in {os.path.dirname(config.checkpoint_path)}...", flush=True)
             # Each rank save predictions independently
             os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
             torch.save(
@@ -593,6 +672,7 @@ def evaluate(
 
         # Reduce to rank 0
         if metric_values is not None:
+            print("Reducing metrics across processes...", flush=True)
             if world_size > 1:
                 dist.reduce(metric_values, dst=0)
 
@@ -613,11 +693,11 @@ def evaluate(
 
         # Run evaluators
         if rank == 0:
-            print(f"\nRunning {len(evaluators)} evaluator(s)...")
+            print(f"\nRunning {len(evaluators)} evaluator(s)...", flush=True)
             
         for i, evaluator in enumerate(evaluators):
             if rank == 0:
-                print(f"Running evaluator {i+1}/{len(evaluators)}: {evaluator.__class__.__name__}")
+                print(f"Running evaluator {i+1}/{len(evaluators)}: {evaluator.__class__.__name__}", flush=True)
                 
             # Path for saving
             evaluator_save_path = None
@@ -635,10 +715,10 @@ def evaluate(
                     reduced_metrics = {}
 
                 reduced_metrics.update(metrics)
-                print(f"  Completed {evaluator.__class__.__name__}")
+                print(f"  Completed {evaluator.__class__.__name__}", flush=True)
                 
         if rank == 0:
-            print("All evaluators completed!")
+            print("All evaluators completed!", flush=True)
 
         if routing_stats is not None:
             routing_metrics, _ = finalize_routing_stats(
@@ -654,6 +734,8 @@ def evaluate(
                 for set_name, metrics in routing_metrics.items():
                     reduced_metrics.setdefault(set_name, {})
                     reduced_metrics[set_name].update(metrics)
+
+        cleanup_memory(config, "evaluation:end", rank)
 
     return reduced_metrics
 
@@ -787,9 +869,14 @@ def launch(hydra_config: DictConfig):
         if _iter_id >= config.min_eval_interval:
             ############ Evaluation
             if RANK == 0:
-                print("EVALUATE")
+                print("EVALUATE", flush=True)
+            if train_state.carry is not None:
+                if RANK == 0:
+                    print("Clearing training carry before evaluation", flush=True)
+                train_state.carry = None
+                cleanup_memory(config, "post_train_carry_clear", RANK)
             if config.ema:
-                print("SWITCH TO EMA")
+                print("SWITCH TO EMA", flush=True)
                 train_state_eval = copy.deepcopy(train_state)
                 train_state_eval.model = ema_helper.ema_copy(train_state_eval.model)
             else:
@@ -809,14 +896,18 @@ def launch(hydra_config: DictConfig):
                 
             ############ Checkpointing
             if RANK == 0:
-                print("SAVE CHECKPOINT")
+                print("SAVE CHECKPOINT", flush=True)
             if RANK == 0 and (config.checkpoint_every_eval or (_iter_id == total_iters - 1)):
+                cleanup_memory(config, "before_checkpoint_save", RANK)
                 save_train_state(config, train_state_eval)
+                cleanup_memory(config, "after_checkpoint_save", RANK)
 
             if config.ema:
                 del train_state_eval
+                cleanup_memory(config, "after_ema_eval_cleanup", RANK)
 
     # finalize
+    cleanup_memory(config, "finalize:before_shutdown", RANK)
     if dist.is_initialized():
         dist.destroy_process_group()
     wandb.finish()
