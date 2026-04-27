@@ -1,0 +1,13 @@
+{
+  "step": 14968,
+  "sets": {
+    "all": {
+      "summary": {
+        "router_entropy": 0.0,
+        "router_p_mlp": 0.0,
+        "router_p_attn": 0.0
+      },
+      "loops": []
+    }
+  }
+}

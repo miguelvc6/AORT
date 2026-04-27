@@ -19,9 +19,17 @@ import coolname
 import hydra
 import pydantic
 from omegaconf import DictConfig
-from adam_atan2_pytorch import AdamAtan2 as AdamATan2
+
+try:
+    from adam_atan2_pytorch import AdamAtan2 as AdamATan2
+except ModuleNotFoundError:
+    try:
+        from adam_atan2 import AdamATan2
+    except ModuleNotFoundError:
+        AdamATan2 = None
 
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMetadata
+from models.losses import IGNORE_LABEL_ID
 from utils.functions import load_model_class, get_model_source_path
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 from models.ema import EMAHelper
@@ -405,7 +413,10 @@ def update_routing_stats(
     if not required_keys.issubset(preds):
         return
 
-    valid_mask = batch["puzzle_identifiers"] != blank_identifier_id
+    if "labels" in batch:
+        valid_mask = (batch["labels"] != IGNORE_LABEL_ID).any(dim=-1)
+    else:
+        valid_mask = batch["puzzle_identifiers"] != blank_identifier_id
     if not torch.any(valid_mask):
         return
 
