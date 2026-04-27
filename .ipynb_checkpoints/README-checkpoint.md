@@ -1,0 +1,178 @@
+# Adaptive Operator Recursive Transformer (AORT)
+
+### Requirements
+
+Installation should take a few minutes. For the smallest experiments on Sudoku-Extreme (pretrain_mlp_t_sudoku), you need 1 GPU with enough memory. With 1 L40S (48Gb Ram), it takes around 18h to finish. In case that you run into issues due to library versions, here is the requirements with the exact versions used: [specific_requirements.txt](https://github.com/SamsungSAILMontreal/TinyRecursiveModels/blob/main/specific_requirements.txt).
+
+- Python 3.10 (or similar)
+- Cuda 12.6.0 (or similar)
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+
+```bash
+uv venv --python 3.13
+source .venv/bin/activate
+uv pip install --upgrade wheel setuptools
+uv pip install --pre --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126 # install torch based on your cuda version
+uv pip install -r requirements.txt # install requirements
+uv pip install --no-cache-dir --no-build-isolation adam-atan2
+uv run wandb login YOUR-LOGIN # login if you want the logger to sync results to your Weights & Biases (https://wandb.ai/)
+```
+
+All Python commands below use `uv run ...` so they will execute inside the `uv`-managed environment.
+
+### Dataset Preparation
+
+```bash
+# ARC-AGI-1
+uv run python -m dataset.build_arc_dataset \
+  --input-file-prefix kaggle/combined/arc-agi \
+  --output-dir data/arc1concept-aug-1000 \
+  --subsets training evaluation concept \
+  --test-set-name evaluation
+
+# ARC-AGI-2
+uv run python -m dataset.build_arc_dataset \
+  --input-file-prefix kaggle/combined/arc-agi \
+  --output-dir data/arc2concept-aug-1000 \
+  --subsets training2 evaluation2 concept \
+  --test-set-name evaluation2
+
+## Note: You cannot train on both ARC-AGI-1 and ARC-AGI-2 and evaluate them both because ARC-AGI-2 training data contains some ARC-AGI-1 eval data
+
+# Sudoku-Extreme
+uv run python dataset/build_sudoku_dataset.py --output-dir data/sudoku-extreme-1k-aug-1000  --subsample-size 1000 --num-aug 1000  # 1000 examples, 1000 augments
+
+# Maze-Hard
+uv run python dataset/build_maze_dataset.py # 1000 examples, 8 augments
+```
+
+## Experiments
+
+### Sudoku-Extreme (assuming 1 L40S GPU):
+
+```bash
+run_name="pretrain_mlp_t_sudoku"
+uv run python pretrain.py \
+arch=trm \
+data_paths="[data/sudoku-extreme-1k-aug-1000]" \
+evaluators="[]" \
+epochs=50000 eval_interval=5000 \
+lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0 \
+arch.mlp_t=True arch.pos_encodings=none \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=6 \
++run_name=${run_name} ema=True
+
+Expected: Around 87% exact-accuracy (+- 2%)
+
+run_name="pretrain_att_sudoku"
+uv run python pretrain.py \
+arch=trm \
+data_paths="[data/sudoku-extreme-1k-aug-1000]" \
+evaluators="[]" \
+epochs=50000 eval_interval=5000 \
+lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0 \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=6 \
++run_name=${run_name} ema=True
+```
+
+Expected: Around 75% exact-accuracy (+- 2%)
+
+*Runtime:* < 20 hours
+
+### Maze-Hard (assuming 4 L40S GPUs):
+
+```bash
+run_name="pretrain_att_maze30x30"
+uv run torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain.py \
+arch=trm \
+data_paths="[data/maze-30x30-hard-1k]" \
+evaluators="[]" \
+epochs=50000 eval_interval=5000 \
+lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0 \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=4 \
++run_name=${run_name} ema=True
+```
+
+*Runtime:* < 24 hours
+
+Actually, you can run Maze-Hard with 1 L40S GPU by reducing the batch-size with no noticable loss in performance:
+
+```bash
+run_name="pretrain_att_maze30x30_1gpu"
+uv run python pretrain.py \
+arch=trm \
+data_paths="[data/maze-30x30-hard-1k]" \
+evaluators="[]" \
+epochs=50000 eval_interval=5000 \
+lr=1e-4 puzzle_emb_lr=1e-4 weight_decay=1.0 puzzle_emb_weight_decay=1.0 global_batch_size=128 \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=4 \
++run_name=${run_name} ema=True
+```
+
+*Runtime:* < 24 hours
+
+### ARC-AGI-1 (assuming 4 H-100 GPUs):
+
+```bash
+run_name="pretrain_att_arc1concept_4"
+uv run torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain.py \
+arch=trm \
+data_paths="[data/arc1concept-aug-1000]" \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=4 \
++run_name=${run_name} ema=True
+
+```
+
+*Runtime:* ~3 days
+
+### ARC-AGI-2 (assuming 4 H-100 GPUs):
+
+```bash
+run_name="pretrain_att_arc2concept_4"
+uv run torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain.py \
+arch=trm \
+data_paths="[data/arc2concept-aug-1000]" \
+arch.L_layers=2 \
+arch.H_cycles=3 arch.L_cycles=4 \
++run_name=${run_name} ema=True
+
+```
+
+*Runtime:* ~3 days
+
+## Reference
+
+If you find our work useful, please consider citing:
+
+```bibtex
+@misc{jolicoeurmartineau2025morerecursivereasoningtiny,
+      title={Less is More: Recursive Reasoning with Tiny Networks}, 
+      author={Alexia Jolicoeur-Martineau},
+      year={2025},
+      eprint={2510.04871},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2510.04871}, 
+}
+```
+
+and the Hierarchical Reasoning Model (HRM):
+
+```bibtex
+@misc{wang2025hierarchicalreasoningmodel,
+      title={Hierarchical Reasoning Model}, 
+      author={Guan Wang and Jin Li and Yuhao Sun and Xing Chen and Changling Liu and Yue Wu and Meng Lu and Sen Song and Yasin Abbasi Yadkori},
+      year={2025},
+      eprint={2506.21734},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2506.21734}, 
+}
+```
+
+This code is based on the Hierarchical Reasoning Model [code](https://github.com/sapientinc/HRM) and the Hierarchical Reasoning Model Analysis [code](https://github.com/arcprize/hierarchical-reasoning-model-analysis).

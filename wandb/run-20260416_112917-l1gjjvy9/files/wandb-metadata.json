@@ -1,0 +1,30 @@
+{
+  "os": "Linux-6.8.12-11-pve-x86_64-with-glibc2.39",
+  "python": "CPython 3.13.11",
+  "startedAt": "2026-04-16T11:29:17.883066Z",
+  "args": [
+    "arch=aort_v0",
+    "data_paths=[data/sudoku-extreme-full]",
+    "evaluators=[]",
+    "lr=1e-4",
+    "puzzle_emb_lr=1e-4",
+    "weight_decay=1.0",
+    "puzzle_emb_weight_decay=1.0",
+    "dataloader_num_workers=0",
+    "global_batch_size=256",
+    "epochs=1",
+    "eval_interval=1"
+  ],
+  "program": "/home/jupyter/AORT/pretrain.py",
+  "codePath": "pretrain.py",
+  "codePathLocal": "pretrain.py",
+  "git": {
+    "remote": "https://github.com/miguelvc6/AORT.git",
+    "commit": "d1695ebcf45da4a1439d80eed11d9c8a34b22837"
+  },
+  "email": "miguelvazquez99@gmail.com",
+  "root": "/home/jupyter/AORT",
+  "host": "705a5256b8ec",
+  "executable": "/home/jupyter/AORT/.venv/bin/python3",
+  "writerId": "rn8b7jki85ucl9yxg9cnatp0o1j04b8p"
+}

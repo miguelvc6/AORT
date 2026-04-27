@@ -1,0 +1,137 @@
+_wandb:
+    value:
+        cli_version: 0.26.0
+        code_path: source-Sudoku-extreme-full-ACT-torch-pretrain.py
+        e:
+            rn8b7jki85ucl9yxg9cnatp0o1j04b8p:
+                args:
+                    - arch=aort_v0
+                    - data_paths=[data/sudoku-extreme-full]
+                    - evaluators=[]
+                    - lr=1e-4
+                    - puzzle_emb_lr=1e-4
+                    - weight_decay=1.0
+                    - puzzle_emb_weight_decay=1.0
+                    - dataloader_num_workers=0
+                    - global_batch_size=256
+                    - epochs=1
+                    - eval_interval=1
+                codePath: pretrain.py
+                codePathLocal: pretrain.py
+                email: miguelvazquez99@gmail.com
+                executable: /home/jupyter/AORT/.venv/bin/python3
+                git:
+                    commit: d1695ebcf45da4a1439d80eed11d9c8a34b22837
+                    remote: https://github.com/miguelvc6/AORT.git
+                host: 705a5256b8ec
+                os: Linux-6.8.12-11-pve-x86_64-with-glibc2.39
+                program: /home/jupyter/AORT/pretrain.py
+                python: CPython 3.13.11
+                root: /home/jupyter/AORT
+                startedAt: "2026-04-16T11:29:17.883066Z"
+                writerId: rn8b7jki85ucl9yxg9cnatp0o1j04b8p
+        m: []
+        python_version: 3.13.11
+        t:
+            "1":
+                - 1
+                - 50
+            "2":
+                - 1
+                - 50
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.13.11
+            "5": 0.26.0
+            "12": 0.26.0
+            "13": linux-x86_64
+arch:
+    value:
+        H_cycles: 3
+        H_layers: 0
+        L_cycles: 6
+        L_layers: 2
+        act_enabled: false
+        expansion: 4
+        forward_dtype: bfloat16
+        halt_exploration_prob: 0.1
+        halt_max_steps: 16
+        hidden_size: 512
+        loss:
+            loss_type: stablemax_cross_entropy
+            name: losses@ACTLossHead
+        mlp_t: false
+        name: recursive_reasoning.trm@TinyRecursiveReasoningModel_ACTV1
+        no_ACT_continue: true
+        num_heads: 8
+        operator_routing: true
+        pos_encodings: rope
+        puzzle_emb_len: 16
+        puzzle_emb_ndim: 512
+        router_balance_weight: 0
+        router_entropy_weight: 0.001
+        router_hidden_size: 256
+        router_pool: mean
+        router_temperature: 1
+        routing_mode: learned_soft
+        schedule_type: mlp_then_attn
+beta1:
+    value: 0.9
+beta2:
+    value: 0.95
+checkpoint_every_eval:
+    value: true
+checkpoint_path:
+    value: checkpoints/Sudoku-extreme-full-ACT-torch/TinyRecursiveReasoningModel_ACTV1 soft-earwig
+data_paths:
+    value:
+        - data/sudoku-extreme-full
+data_paths_test:
+    value: []
+dataloader_num_workers:
+    value: 0
+dataloader_persistent_workers:
+    value: false
+dataloader_prefetch_factor:
+    value: null
+ema:
+    value: false
+ema_rate:
+    value: 0.999
+epochs:
+    value: 1
+eval_interval:
+    value: 1
+eval_save_outputs:
+    value: []
+evaluators:
+    value: []
+freeze_weights:
+    value: false
+global_batch_size:
+    value: 256
+load_checkpoint:
+    value: null
+lr:
+    value: 0.0001
+lr_min_ratio:
+    value: 1
+lr_warmup_steps:
+    value: 2000
+min_eval_interval:
+    value: 0
+project_name:
+    value: Sudoku-extreme-full-ACT-torch
+puzzle_emb_lr:
+    value: 0.0001
+puzzle_emb_weight_decay:
+    value: 1
+run_name:
+    value: TinyRecursiveReasoningModel_ACTV1 soft-earwig
+seed:
+    value: 0
+weight_decay:
+    value: 1

@@ -1,0 +1,24 @@
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_setup.py:_flush():81] Current SDK version is 0.26.0
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_setup.py:_flush():81] Configure stats pid to 241618
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_init.py:setup_run_log_directory():721] Logging user logs to /home/jupyter/AORT/wandb/run-20260416_112917-l1gjjvy9/logs/debug.log
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_init.py:setup_run_log_directory():722] Logging internal logs to /home/jupyter/AORT/wandb/run-20260416_112917-l1gjjvy9/logs/debug-internal.log
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_init.py:init():848] calling init triggers
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_init.py:init():853] wandb.init called with sweep_config: {}
+config: {'arch': {'name': 'recursive_reasoning.trm@TinyRecursiveReasoningModel_ACTV1', 'loss': {'name': 'losses@ACTLossHead', 'loss_type': 'stablemax_cross_entropy'}, 'halt_exploration_prob': 0.1, 'halt_max_steps': 16, 'act_enabled': False, 'H_cycles': 3, 'L_cycles': 6, 'H_layers': 0, 'L_layers': 2, 'hidden_size': 512, 'num_heads': 8, 'expansion': 4, 'puzzle_emb_ndim': 512, 'pos_encodings': 'rope', 'forward_dtype': 'bfloat16', 'mlp_t': False, 'puzzle_emb_len': 16, 'no_ACT_continue': True, 'operator_routing': True, 'routing_mode': 'learned_soft', 'schedule_type': 'mlp_then_attn', 'router_pool': 'mean', 'router_hidden_size': 256, 'router_temperature': 1.0, 'router_entropy_weight': 0.001, 'router_balance_weight': 0.0}, 'data_paths': ['data/sudoku-extreme-full'], 'data_paths_test': [], 'evaluators': [], 'global_batch_size': 256, 'epochs': 1, 'lr': 0.0001, 'lr_min_ratio': 1.0, 'lr_warmup_steps': 2000, 'weight_decay': 1.0, 'beta1': 0.9, 'beta2': 0.95, 'puzzle_emb_lr': 0.0001, 'puzzle_emb_weight_decay': 1.0, 'project_name': 'Sudoku-extreme-full-ACT-torch', 'run_name': 'TinyRecursiveReasoningModel_ACTV1 soft-earwig', 'load_checkpoint': None, 'checkpoint_path': 'checkpoints/Sudoku-extreme-full-ACT-torch/TinyRecursiveReasoningModel_ACTV1 soft-earwig', 'seed': 0, 'checkpoint_every_eval': True, 'eval_interval': 1, 'min_eval_interval': 0, 'eval_save_outputs': [], 'ema': False, 'ema_rate': 0.999, 'freeze_weights': False, 'dataloader_num_workers': 0, 'dataloader_prefetch_factor': None, 'dataloader_persistent_workers': False, '_wandb': {}}
+2026-04-16 11:29:17,884 INFO    MainThread:241618 [wandb_init.py:init():896] starting backend
+2026-04-16 11:29:18,125 INFO    MainThread:241618 [wandb_init.py:init():911] sending inform_init request
+2026-04-16 11:29:18,130 INFO    MainThread:241618 [wandb_init.py:init():919] backend started and connected
+2026-04-16 11:29:18,131 INFO    MainThread:241618 [wandb_init.py:init():989] updated telemetry
+2026-04-16 11:29:18,136 INFO    MainThread:241618 [wandb_init.py:init():1013] communicating run to backend with 90.0 second timeout
+2026-04-16 11:29:18,703 INFO    MainThread:241618 [wandb_init.py:init():1058] starting run threads in backend
+2026-04-16 11:29:18,731 INFO    MainThread:241618 [wandb_run.py:_console_start():2542] atexit reg
+2026-04-16 11:29:18,731 INFO    MainThread:241618 [wandb_run.py:_redirect():2391] redirect: wrap_raw
+2026-04-16 11:29:18,731 INFO    MainThread:241618 [wandb_run.py:_redirect():2460] Wrapping output streams.
+2026-04-16 11:29:18,731 INFO    MainThread:241618 [wandb_run.py:_redirect():2483] Redirects installed.
+2026-04-16 11:29:18,734 INFO    MainThread:241618 [wandb_init.py:init():1098] run started, returning control to user process
+2026-04-16 11:29:19,561 INFO    MainThread:241618 [wandb_run.py:_config_callback():1403] config_cb None None {'_wandb': {'code_path': 'source-Sudoku-extreme-full-ACT-torch-pretrain.py'}}
+2026-04-18 15:02:27,516 INFO    MainThread:241618 [wandb_run.py:_finish():2309] finishing run miguelvazquez99-wu-vienna/Sudoku-extreme-full-ACT-torch/l1gjjvy9
+2026-04-18 15:02:27,518 INFO    MainThread:241618 [wandb_run.py:_atexit_cleanup():2508] got exitcode: 0
+2026-04-18 15:02:27,520 INFO    MainThread:241618 [wandb_run.py:_restore():2490] restore
+2026-04-18 15:02:27,520 INFO    MainThread:241618 [wandb_run.py:_restore():2496] restore done

@@ -1,0 +1,59 @@
+arch:
+  H_cycles: 3
+  H_layers: 0
+  L_cycles: 6
+  L_layers: 2
+  act_enabled: false
+  expansion: 4
+  forward_dtype: bfloat16
+  halt_exploration_prob: 0.1
+  halt_max_steps: 16
+  hidden_size: 512
+  loss:
+    loss_type: stablemax_cross_entropy
+    name: losses@ACTLossHead
+  mlp_t: false
+  name: recursive_reasoning.trm@TinyRecursiveReasoningModel_ACTV1
+  no_ACT_continue: true
+  num_heads: 8
+  operator_routing: true
+  pos_encodings: rope
+  puzzle_emb_len: 16
+  puzzle_emb_ndim: 512
+  router_balance_weight: 0.0
+  router_entropy_weight: 0.001
+  router_hidden_size: 256
+  router_pool: mean
+  router_temperature: 1.0
+  routing_mode: learned_soft
+  schedule_type: mlp_then_attn
+beta1: 0.9
+beta2: 0.95
+checkpoint_every_eval: true
+checkpoint_path: checkpoints/Sudoku-extreme-full-ACT-torch/TinyRecursiveReasoningModel_ACTV1
+  soft-earwig
+data_paths:
+- data/sudoku-extreme-full
+data_paths_test: []
+dataloader_num_workers: 0
+dataloader_persistent_workers: false
+dataloader_prefetch_factor: null
+ema: false
+ema_rate: 0.999
+epochs: 1
+eval_interval: 1
+eval_save_outputs: []
+evaluators: []
+freeze_weights: false
+global_batch_size: 256
+load_checkpoint: null
+lr: 0.0001
+lr_min_ratio: 1.0
+lr_warmup_steps: 2000
+min_eval_interval: 0
+project_name: Sudoku-extreme-full-ACT-torch
+puzzle_emb_lr: 0.0001
+puzzle_emb_weight_decay: 1.0
+run_name: TinyRecursiveReasoningModel_ACTV1 soft-earwig
+seed: 0
+weight_decay: 1.0
