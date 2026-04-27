@@ -139,6 +139,72 @@ def _format_num_bytes(num_bytes: Optional[float]) -> str:
     return f"{value:.2f} {units[unit_idx]}"
 
 
+def _metric_value_to_python(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 1:
+            return value.detach().cpu().item()
+        return value.detach().cpu().tolist()
+
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+
+    return value
+
+
+def flatten_metrics(metrics: Dict[str, Any], prefix: Optional[str] = None) -> Dict[str, Any]:
+    flattened = {}
+    for key, value in metrics.items():
+        flat_key = f"{prefix}/{key}" if prefix else key
+        if isinstance(value, dict):
+            flattened.update(flatten_metrics(value, flat_key))
+        else:
+            flattened[flat_key] = _metric_value_to_python(value)
+
+    return flattened
+
+
+def append_metrics_jsonl(
+    config: PretrainConfig,
+    *,
+    step: int,
+    phase: str,
+    metrics: Dict[str, Any],
+    epoch: Optional[int] = None,
+) -> None:
+    if config.checkpoint_path is None:
+        return
+
+    os.makedirs(config.checkpoint_path, exist_ok=True)
+    row = {
+        "step": step,
+        "phase": phase,
+    }
+    if epoch is not None:
+        row["epoch"] = epoch
+    row.update(metrics)
+
+    with open(os.path.join(config.checkpoint_path, "metrics.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def log_metrics(
+    config: PretrainConfig,
+    *,
+    step: int,
+    phase: str,
+    metrics: Dict[str, Any],
+    epoch: Optional[int] = None,
+    prefix: Optional[str] = None,
+) -> Dict[str, Any]:
+    flat_metrics = flatten_metrics(metrics, prefix=prefix)
+    wandb.log(flat_metrics, step=step)
+    append_metrics_jsonl(config, step=step, phase=phase, metrics=flat_metrics, epoch=epoch)
+    return flat_metrics
+
+
 def log_memory_usage(config: PretrainConfig, label: str, rank: int):
     if not config.log_memory_usage or rank != 0:
         return
@@ -853,7 +919,12 @@ def launch(hydra_config: DictConfig):
     if RANK == 0:
         progress_bar = tqdm.tqdm(total=train_state.total_steps)
         wandb.init(project=config.project_name, name=config.run_name, config=config.model_dump(), settings=wandb.Settings(_disable_stats=True))  # type: ignore
-        wandb.log({"num_params": sum(x.numel() for x in train_state.model.parameters())}, step=0)
+        log_metrics(
+            config,
+            step=0,
+            phase="init",
+            metrics={"num_params": sum(x.numel() for x in train_state.model.parameters())},
+        )
         save_code_and_config(config)
     if config.ema:
         print('Setup EMA')
@@ -862,7 +933,8 @@ def launch(hydra_config: DictConfig):
 
     # Training Loop
     for _iter_id in range(total_iters):
-        print (f"[Rank {RANK}, World Size {WORLD_SIZE}]: Epoch {_iter_id * train_epochs_per_iter}")
+        current_epoch = _iter_id * train_epochs_per_iter
+        print (f"[Rank {RANK}, World Size {WORLD_SIZE}]: Epoch {current_epoch}")
 
         ############ Train Iter
         if RANK == 0:
@@ -872,7 +944,13 @@ def launch(hydra_config: DictConfig):
             metrics = train_batch(config, train_state, batch, global_batch_size, rank=RANK, world_size=WORLD_SIZE)
 
             if RANK == 0 and metrics is not None:
-                wandb.log(metrics, step=train_state.step)
+                log_metrics(
+                    config,
+                    step=train_state.step,
+                    phase="train",
+                    metrics=metrics,
+                    epoch=current_epoch,
+                )
                 progress_bar.update(train_state.step - progress_bar.n)  # type: ignore
             if config.ema:
                 ema_helper.update(train_state.model)
@@ -903,7 +981,14 @@ def launch(hydra_config: DictConfig):
                 cpu_group=CPU_PROCESS_GROUP)
 
             if RANK == 0 and metrics is not None:
-                wandb.log(metrics, step=train_state.step)
+                log_metrics(
+                    config,
+                    step=train_state.step,
+                    phase="eval",
+                    metrics=metrics,
+                    epoch=current_epoch,
+                    prefix="eval",
+                )
                 
             ############ Checkpointing
             if RANK == 0:

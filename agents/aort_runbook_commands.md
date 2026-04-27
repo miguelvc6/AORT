@@ -94,7 +94,17 @@ Expected smoke-run result:
 - `aort_fixed_schedule`: non-empty per-loop rows with early loops using MLP and later loops using attention.
 - `aort_v0`: non-empty per-loop rows and nonzero entropy early in training.
 
-## 3. Core Comparison Runs
+## 3. Inspect Metric History
+
+Every new run appends train, eval, and initialization metrics to:
+
+```text
+checkpoints/<project_name>/<run_name>/metrics.jsonl
+```
+
+The file has one JSON object per logged step. Train keys are flat, e.g. `train/lm_loss`, and eval keys are flattened under `eval/`, e.g. `eval/all/exact_accuracy`, `eval/all/router_entropy`, and `eval/ARC/pass@1` when ARC evaluators are enabled.
+
+## 4. Core Comparison Runs
 
 Use the same budget for all six models. This mirrors the README Sudoku settings while keeping the comparison matched.
 
@@ -154,7 +164,7 @@ uv run python pretrain.py \
   +run_name=core_aort_v0_learned_soft_seed0
 ```
 
-## 4. Repeat Seeds
+## 5. Repeat Seeds
 
 If the seed-0 result is interpretable, repeat the core comparison with the same commands and change only:
 
@@ -170,7 +180,7 @@ seed=2
 +run_name=..._seed2
 ```
 
-## 5. Do Not Start Halting Yet
+## 6. Do Not Start Halting Yet
 
 Only run AORT-v1 or unified STOP experiments after the table contains:
 
