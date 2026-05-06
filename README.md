@@ -1,5 +1,7 @@
 # Adaptive Operator Recursive Transformer (AORT)
 
+AORT explores adaptive operator recursion: instead of applying the same recurrent update at every reasoning step, the model can choose which operator best fits the current state and loop index. The initial prototype routes per example and per loop between MLP-style and attention-based update operators, with later variants intended to integrate early stopping into the same controller. This makes AORT a testbed for whether dynamic operator choice can improve generalization or compute efficiency on structured reasoning tasks such as Sudoku-Extreme, Maze-Hard, and ARC-AGI.
+
 ### Requirements
 
 Installation should take a few minutes. For the smallest experiments on Sudoku-Extreme (pretrain_mlp_t_sudoku), you need 1 GPU with enough memory. With 1 L40S (48Gb Ram), it takes around 18h to finish. In case that you run into issues due to library versions, here is the requirements with the exact versions used: [specific_requirements.txt](https://github.com/SamsungSAILMontreal/TinyRecursiveModels/blob/main/specific_requirements.txt).
